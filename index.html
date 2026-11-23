@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ابزار عکس ۶۵۰۰×۳۰۰</title>
+<style>
+  :root{
+    --bg:#0e1319;
+    --panel:#171e28;
+    --line:#2a3544;
+    --ink:#e7edf5;
+    --muted:#8d9bb0;
+    --accent:#5fd0b4;
+    --accent-ink:#06231d;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Vazirmatn","Tahoma","Segoe UI",system-ui,sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+  }
+  .card{
+    width:100%;max-width:460px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:26px 22px 24px;
+    text-align:center;
+  }
+  h1{font-size:1.25rem;font-weight:700;margin-bottom:6px}
+  p.sub{color:var(--muted);font-size:.9rem;line-height:1.8;margin-bottom:20px}
+  .drop{
+    display:block;cursor:pointer;
+    border:2px dashed var(--line);
+    border-radius:14px;
+    padding:36px 14px;
+    transition:border-color .2s, background .2s;
+  }
+  .drop:hover,.drop.over{border-color:var(--accent);background:rgba(95,208,180,.06)}
+  .drop b{display:block;font-size:1rem;margin-bottom:6px}
+  .drop span{color:var(--muted);font-size:.85rem}
+  input[type=file]{display:none}
+
+  .btn{
+    display:inline-block;width:100%;
+    border:0;border-radius:12px;
+    padding:14px;font:inherit;font-weight:700;font-size:1rem;
+    background:var(--accent);color:var(--accent-ink);
+    cursor:pointer;text-decoration:none;
+  }
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:10px;font-weight:500}
+
+  .view{display:none}
+  .view.on{display:block}
+
+  .ring{
+    width:84px;height:84px;margin:10px auto 22px;
+    border-radius:50%;
+    border:6px solid var(--line);
+    border-top-color:var(--accent);
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.ring{animation-duration:3s}}
+  .bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:6px 0 10px}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+  .pct{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .hint{color:var(--muted);font-size:.85rem;margin-top:4px}
+
+  /* پیش‌نمایش روی زمینه‌ی شطرنجی چون عکس شفافیت دارد */
+  .result{
+    width:100%;height:auto;display:block;margin:0 auto 18px;
+    border-radius:10px;border:1px solid var(--line);
+    background:
+      conic-gradient(#2b3340 25%, #212833 0 50%, #2b3340 0 75%, #212833 0) 0 0/16px 16px;
+  }
+  .meta{color:var(--muted);font-size:.8rem;margin:-8px 0 16px}
+  .err{color:#ff8e8e;font-size:.9rem;margin-top:14px;line-height:1.8}
+</style>
+</head>
+<body>
+<main class="card">
+
+  <section id="v-pick" class="view on">
+    <h1>ابزار عکس ۶۵۰۰×۳۰۰</h1>
+    <p class="sub">عکسی که از ابزار اول گرفتی را انتخاب کن. بقیه‌ی کار خودکار انجام می‌شود.</p>
+    <label class="drop" id="drop">
+      <b>انتخاب عکس</b>
+      <span>یا عکس را اینجا رها کن</span>
+      <input type="file" id="file" accept="image/*">
+    </label>
+    <div class="err" id="err" hidden></div>
+  </section>
+
+  <section id="v-load" class="view">
+    <div class="ring" aria-hidden="true"></div>
+    <div class="pct" id="pct">0%</div>
+    <div class="bar"><i id="barfill"></i></div>
+    <div class="hint">در حال آماده‌سازی عکس…</div>
+  </section>
+
+  <section id="v-done" class="view">
+    <h1>عکس آماده است</h1>
+    <p class="sub">&nbsp;</p>
+    <canvas id="out" class="result" width="6500" height="300"></canvas>
+    <div class="meta">6500 × 300 · PNG</div>
+    <a id="dl" class="btn" download="6500x300.png">دانلود 6500x300.png</a>
+    <button class="btn ghost" id="again" type="button">عکس جدید</button>
+  </section>
+
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const W = 6500, H = 300;
+  const OPACITY_MIN = 200, OPACITY_MAX = 230;   // مقیاس ۰ تا ۲۵۵ مثل Layer Properties در Paint.NET
+
+  const $ = id => document.getElementById(id);
+  const views = { pick: $('v-pick'), load: $('v-load'), done: $('v-done') };
+  const show = n => { for (const k in views) views[k].classList.toggle('on', k === n); };
+  const rndInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
+  function setProgress(p){
+    const v = Math.round(p);
+    $('pct').textContent = v + '%';
+    $('barfill').style.width = v + '%';
+  }
+
+  function loadImage(file){
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+      img.src = url;
+    });
+  }
+
+  async function process(file){
+    show('load'); setProgress(0);
+    await nextFrame();
+
+    try {
+      const img = await loadImage(file);
+      setProgress(15); await nextFrame();
+
+      // ۱) Image > Resize : عرض ۶۵۰۰ ، ارتفاع ۳۰۰ (بدون قفل نسبت)
+      const out = $('out');
+      const ctx = out.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, W, H);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, W, H);
+      setProgress(55); await nextFrame();
+
+      // ۲) Layer opacity رندوم بین ۲۰۰ و ۲۳۰ (از ۲۵۵)
+      const opacity = rndInt(OPACITY_MIN, OPACITY_MAX);
+      const id = ctx.getImageData(0, 0, W, H);
+      const d = id.data;
+      const k = opacity / 255;
+      for (let i = 3; i < d.length; i += 4){
+        d[i] = Math.round(d[i] * k);
+      }
+      setProgress(80); await nextFrame();
+
+      ctx.putImageData(id, 0, 0);
+      setProgress(90); await nextFrame();
+
+      // ۳) آماده‌سازی دانلود PNG
+      const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+      if (!blob) throw new Error('png failed');
+      const old = $('dl').dataset.url;
+      if (old) URL.revokeObjectURL(old);
+      const url = URL.createObjectURL(blob);
+      $('dl').href = url; $('dl').dataset.url = url;
+
+      setProgress(100);
+      await new Promise(r => setTimeout(r, 350));
+      show('done');
+    } catch (e) {
+      show('pick');
+      const err = $('err');
+      err.hidden = false;
+      err.textContent = 'ساخت عکس انجام نشد. یک عکس دیگر انتخاب کن.';
+    }
+  }
+
+  const fileInput = $('file'), drop = $('drop');
+
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files && fileInput.files[0];
+    $('err').hidden = true;
+    if (f) process(f);
+    fileInput.value = '';
+  });
+
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('over');
+  }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('over');
+  }));
+  drop.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    $('err').hidden = true;
+    if (f) process(f);
+  });
+
+  $('again').addEventListener('click', () => show('pick'));
+})();
+</script>
+</body>
+</html>
